@@ -36,7 +36,7 @@ A simple, offline-first attendance app for teachers. Built as a Progressive Web 
 
 ```bash
 # Clone the repo
-git clone https://github.com/your-username/hajiri-sahayog.git
+git clone https://github.com/mynameisprem-pj/Hajiri-Sahayog
 cd hajiri-sahayog
 
 # Install dependencies
