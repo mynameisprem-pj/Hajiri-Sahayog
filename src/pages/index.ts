@@ -1,0 +1,7 @@
+export { WelcomePage } from './Welcome'
+export { DashboardPage } from './Dashboard'
+export { ClassesPage } from './Classes'
+export { ClassDetailPage } from './ClassDetail'
+export { StudentProfilePage } from './StudentProfile'
+export { HolidaysPage } from './Holidays'
+export { SettingsPage } from './Settings'
