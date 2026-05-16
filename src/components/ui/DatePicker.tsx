@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { ChevronLeft, ChevronRight, Calendar } from 'lucide-react'
 import { useProfile } from '@/store/useAppStore'
 import {
@@ -54,8 +54,17 @@ function BSDatePicker({ value, onChange, maxDate, minDate }: DatePickerProps) {
   const [month, setMonth] = useState(bs.month)
   const [day, setDay] = useState(bs.day)
 
-  // Sync internal state when external value changes
+  // Track whether the last change came from internal user interaction.
+  // If so, skip the useEffect re-sync to avoid the off-by-one timezone bug
+  // where onChange(adDate) → parent updates value → useEffect re-parses → wrong day shown.
+  const internalChange = useRef(false)
+
+  // Only sync from external value changes (e.g. parent resets the picker)
   useEffect(() => {
+    if (internalChange.current) {
+      internalChange.current = false
+      return
+    }
     if (value) {
       const parsed = adToBSPicker(value)
       setYear(parsed.year)
@@ -74,6 +83,8 @@ function BSDatePicker({ value, onChange, maxDate, minDate }: DatePickerProps) {
       const adDate = bsPickerToAD(y, m, clampedDay)
       if (maxDate && adDate > maxDate) return
       if (minDate && adDate < minDate) return
+      // Mark as internal change so useEffect skips re-sync
+      internalChange.current = true
       setYear(y)
       setMonth(m)
       setDay(clampedDay)
@@ -167,7 +178,6 @@ export function DateNavigator({ date, onChange, disableFuture = true }: DateNavi
   const system = profile?.dateSystem ?? 'AD'
   const today = todayAD()
   const isToday = date === today
-//   const isFuture = date > today
 
   const move = (days: number) => {
     const d = new Date(date)

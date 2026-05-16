@@ -86,6 +86,7 @@ interface AppState {
   loadAttendanceForDate: (classId: number, date: string) => Promise<void>
   markAttendance: (studentId: number, classId: number, date: string, status: AttendanceStatus) => Promise<void>
   markAllPresent: (classId: number, date: string) => Promise<void>
+  clearAllAttendance: (classId: number, date: string) => Promise<void>
 
   // Holidays
   loadHolidays: () => Promise<void>
@@ -109,7 +110,11 @@ interface AppState {
 // ─── Today's date helper ──────────────────────────────────────────────────────
 
 function todayString(): string {
-  return new Date().toISOString().split('T')[0]
+  const d = new Date()
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
 }
 
 function generateId(): string {
@@ -364,6 +369,12 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (get().selectedStudentId === studentId) {
       await get().selectStudent(studentId)
     }
+  },
+
+  clearAllAttendance: async (classId, date) => {
+    await attendanceOps.clearByClassAndDate(classId, date)
+    await get().loadAttendanceForDate(classId, date)
+    get().showToast('success', 'Attendance cleared')
   },
 
   markAllPresent: async (classId, date) => {

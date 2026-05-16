@@ -15,7 +15,12 @@ export function adToNepali(adDateString: string): NepaliDate {
 export function nepaliToAd(year: number, month: number, day: number): string {
   const nd = new NepaliDate(year, month - 1, day) // month is 0-indexed in NepaliDate
   const jsDate = nd.toJsDate()
-  return jsDate.toISOString().split('T')[0]
+  // Use local date parts instead of toISOString() to avoid UTC timezone shift.
+  // toISOString() converts to UTC which in Nepal (UTC+5:45) shifts the date back by 1 day.
+  const y = jsDate.getFullYear()
+  const m = String(jsDate.getMonth() + 1).padStart(2, '0')
+  const d = String(jsDate.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
 }
 
 // ─── Display Formatting ───────────────────────────────────────────────────────
@@ -116,9 +121,13 @@ export function getDayOfWeekShort(adDateString: string): string {
 
 // ─── Today ────────────────────────────────────────────────────────────────────
 
-/** Returns today as an AD date string (YYYY-MM-DD) */
+/** Returns today as an AD date string (YYYY-MM-DD) using local time */
 export function todayAD(): string {
-  return new Date().toISOString().split('T')[0]
+  const d = new Date()
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
 }
 
 /** Returns today's BS year, month (1-indexed), day */
@@ -200,8 +209,7 @@ export function getBSYearRange(): number[] {
 export function getDaysInBSMonth(year: number, month: number): number {
   try {
     // Find days by checking when the next month starts
-    // const nd = new NepaliDate(year, month - 1, 1)
- // first of this month
+    // const nd = new NepaliDate(year, month - 1, 1) // first of this month
     // Try day 32 — it will overflow to next month; subtract to find max
     let days = 30
     for (let d = 32; d >= 28; d--) {
@@ -294,4 +302,31 @@ export function getWeeklyOffDaysInMonth(
 export function getDayOfWeekNumber(adDateString: string): number {
   const [year, month, day] = adDateString.split('-').map(Number)
   return new Date(year, month - 1, day).getDay()
+}
+
+// ─── BS Month Key ─────────────────────────────────────────────────────────────
+
+/**
+ * Get the BS month key for an AD date string.
+ * Returns "YYYY-MM" in BS, e.g. "2082-01" for Baisakh 2082.
+ * Used as a stable grouping key for BS month filtering.
+ */
+export function getBSMonthKey(adDateString: string): string {
+  try {
+    const nd = adToNepali(adDateString)
+    const y = nd.getYear()
+    const m = String(nd.getMonth() + 1).padStart(2, '0')
+    return `${y}-${m}`
+  } catch {
+    return adDateString.slice(0, 7)
+  }
+}
+
+/**
+ * Format a BS month key ("YYYY-MM" in BS) to a display label.
+ * e.g. "2082-01" → "Baisakh 2082"
+ */
+export function formatBSMonthKey(bsKey: string): string {
+  const [year, month] = bsKey.split('-').map(Number)
+  return `${BS_MONTHS[month - 1]} ${year}`
 }

@@ -95,7 +95,7 @@ function AddStudentSheet({ isOpen, onClose, classId, nextRollNo, existingRollNos
         <div className="flex flex-col gap-2 w-full">
           <div className="flex gap-2">
             <Button variant="secondary" fullWidth onClick={onClose}>
-              Cancel
+              Done
             </Button>
             <Button fullWidth loading={saving} onClick={handleSave}>
               Save & Add Next
@@ -587,6 +587,7 @@ function AttendanceTab({ classId }: AttendanceTabProps) {
   const setAttendanceDate = useAppStore(s => s.setAttendanceDate)
   const markAttendance = useAppStore(s => s.markAttendance)
   const markAllPresent = useAppStore(s => s.markAllPresent)
+  const clearAllAttendance = useAppStore(s => s.clearAllAttendance)
 
   const { query, setQuery, filtered } = useSearch(
     students,
@@ -599,7 +600,7 @@ function AttendanceTab({ classId }: AttendanceTabProps) {
   }
 
   const markedCount = todayAttendance.length
-  const isHolidayDate = todayAttendance.some(a => a.status === 'holiday') || isRecurringOffDay || (attendanceDate === todayAD() && todayIsHoliday)
+  const isHolidayDate = todayAttendance.some(a => a.status === 'holiday') || isRecurringOffDay || (attendanceDate === new Date().toISOString().split('T')[0] && todayIsHoliday)
 
   if (students.length === 0) {
     return (
@@ -622,8 +623,8 @@ function AttendanceTab({ classId }: AttendanceTabProps) {
         />
       </div>
 
-      {/* Holiday Banner */}
-      {isHolidayDate && (
+      {/* Holiday Info Banner — simple, no special actions */}
+      {isHolidayDate && !todayAttendance.some(a => a.status !== 'holiday') && (
         <div className="mx-4 bg-holiday-light rounded-2xl px-4 py-3 flex items-center gap-3">
           <span className="text-xl">🎉</span>
           <div>
@@ -633,27 +634,31 @@ function AttendanceTab({ classId }: AttendanceTabProps) {
                 : attendanceDate === todayAD() ? todayHolidayName : 'Holiday'
               }
             </p>
-            <p className="text-xs text-holiday">
-              {isRecurringOffDay && !todayAttendance.some(a => a.status === 'holiday')
-                ? 'This day is set as a weekly off day'
-                : 'Attendance auto-marked as Holiday'
-              }
-            </p>
+            <p className="text-xs text-holiday">Attendance auto-marked as Holiday</p>
           </div>
         </div>
       )}
 
-      {/* Progress + Mark All */}
-      {!isHolidayDate && (
-        <div className="px-4 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-500 font-medium">
-              {markedCount}/{students.length} marked
-            </span>
-            {markedCount === students.length && markedCount > 0 && (
-              <Badge color="green" dot>Done</Badge>
-            )}
-          </div>
+      {/* Progress + Actions */}
+      <div className="px-4 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-slate-500 font-medium">
+            {markedCount}/{students.length} marked
+          </span>
+          {markedCount === students.length && markedCount > 0 && (
+            <Badge color="green" dot>Done</Badge>
+          )}
+        </div>
+        <div className="flex gap-2">
+          {markedCount > 0 && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => clearAllAttendance(classId, attendanceDate)}
+            >
+              Clear All
+            </Button>
+          )}
           <Button
             size="sm"
             variant="secondary"
@@ -662,7 +667,7 @@ function AttendanceTab({ classId }: AttendanceTabProps) {
             Mark All Present
           </Button>
         </div>
-      )}
+      </div>
 
       {/* Search */}
       {students.length > 8 && (
@@ -680,8 +685,6 @@ function AttendanceTab({ classId }: AttendanceTabProps) {
         <Card padding="none">
           {filtered.map((student, idx) => {
             const status = getStatus(student.id!)
-            const isHoliday = status === 'holiday'
-
             return (
               <div key={student.id}>
                 <div className="flex items-center gap-3 px-4 py-3">
@@ -695,22 +698,18 @@ function AttendanceTab({ classId }: AttendanceTabProps) {
                     {status && <StatusBadge status={status} size="sm" />}
                   </div>
 
-                  {isHoliday ? (
-                    <StatusBadge status="holiday" size="sm" />
-                  ) : (
-                    <div className="flex gap-1.5 shrink-0">
-                      {(['present', 'absent', 'leave'] as AttendanceStatus[]).map(s => (
-                        <AttendanceToggle
-                          key={s}
-                          status={status}
-                          targetStatus={s}
-                          onSelect={selected =>
-                            markAttendance(student.id!, classId, attendanceDate, selected)
-                          }
-                        />
-                      ))}
-                    </div>
-                  )}
+                  <div className="flex gap-1.5 shrink-0">
+                    {(['present', 'absent', 'leave'] as AttendanceStatus[]).map(s => (
+                      <AttendanceToggle
+                        key={s}
+                        status={status}
+                        targetStatus={s}
+                        onSelect={selected =>
+                          markAttendance(student.id!, classId, attendanceDate, selected)
+                        }
+                      />
+                    ))}
+                  </div>
                 </div>
                 {idx < filtered.length - 1 && (
                   <div className="border-t border-slate-50 mx-4" />

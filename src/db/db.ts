@@ -292,6 +292,14 @@ export const attendanceOps = {
     return [...new Set(records.map(r => r.date))].sort()
   },
 
+  // Clear all attendance for a class on a specific date
+  async clearByClassAndDate(classId: number, date: string): Promise<void> {
+    await db.attendance
+      .where('[classId+date]')
+      .equals([classId, date])
+      .delete()
+  },
+
   // Apply holiday status to all students in all classes for a date
   async applyHolidayToAllClasses(date: string): Promise<void> {
     await db.transaction('rw', db.attendance, db.students, async () => {
@@ -451,5 +459,9 @@ export const backupOps = {
 // ─── Helper ───────────────────────────────────────────────────────────────────
 
 function toDateString(date: Date): string {
-  return date.toISOString().split('T')[0] // "YYYY-MM-DD"
+  // Use local date parts to avoid UTC timezone shift (critical for Nepal UTC+5:45)
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
 }

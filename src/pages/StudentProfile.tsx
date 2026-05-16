@@ -1,65 +1,55 @@
 import { useEffect, useState } from 'react'
 import { CalendarOff } from 'lucide-react'
 import {
-  PageHeader, StatCard, Card, EmptyState,
-  StatusBadge, MonthSelector,
+  PageHeader, StatCard, Card, EmptyState, StatusBadge,
 } from '@/components/ui'
 import { useSelectedStudent, useProfile, useAppStore, useHolidays } from '@/store/useAppStore'
 import { attendanceOps } from '@/db/db'
 import {
-  formatDate, formatMonthLabel, getUniqueMonths,
-  currentMonthPrefix, getWeeklyOffDaysInMonth,
+  formatDate, getUniqueMonths, formatMonthLabel,
+  getWeeklyOffDaysInMonth, getBSMonthKey, formatBSMonthKey,
   isWeeklyOffDay, todayAD,
+  currentMonthPrefix,
 } from '@/utils/dateConverter'
 import type { AttendanceHistoryEntry } from '@/types'
 
 // ─── Upcoming Holidays Section ────────────────────────────────────────────────
 
-interface UpcomingHolidaysProps {
+interface UpcomingHolidaysSectionProps {
   weeklyOffDays: number[]
   system: 'BS' | 'AD'
 }
 
-function UpcomingHolidaysSection({ weeklyOffDays, system }: UpcomingHolidaysProps) {
+function UpcomingHolidaysSection({ weeklyOffDays, system }: UpcomingHolidaysSectionProps) {
   const holidays = useHolidays()
   const today = todayAD()
 
-  // Future one-time holidays
   const futureOneTime = holidays
     .filter(h => h.date > today)
     .sort((a, b) => a.date.localeCompare(b.date))
     .slice(0, 5)
 
-  // Next 5 upcoming recurring off days (next 60 days window)
   const futureRecurring: { date: string; label: string }[] = []
   if (weeklyOffDays.length > 0) {
     const cursor = new Date()
-    cursor.setDate(cursor.getDate() + 1) // start from tomorrow
+    cursor.setDate(cursor.getDate() + 1)
     const limit = new Date()
-    limit.setDate(limit.getDate() + 60) // look 60 days ahead
-
+    limit.setDate(limit.getDate() + 60)
     while (cursor <= limit && futureRecurring.length < 5) {
       const dateStr = cursor.toISOString().split('T')[0]
       const dow = cursor.getDay()
-      if (
-        weeklyOffDays.includes(dow) &&
-        !holidays.some(h => h.date === dateStr) // not already a one-time holiday
-      ) {
-        const dayName = ['Sunday', 'Monday', 'Tuesday', 'Wednesday',
-          'Thursday', 'Friday', 'Saturday'][dow]
+      if (weeklyOffDays.includes(dow) && !holidays.some(h => h.date === dateStr)) {
+        const dayName = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][dow]
         futureRecurring.push({ date: dateStr, label: `Weekly Off — ${dayName}` })
       }
       cursor.setDate(cursor.getDate() + 1)
     }
   }
 
-  // Merge and sort by date, limit to 6 total
   const allUpcoming = [
     ...futureOneTime.map(h => ({ date: h.date, label: h.name, isOneTime: true })),
     ...futureRecurring.map(r => ({ date: r.date, label: r.label, isOneTime: false })),
-  ]
-    .sort((a, b) => a.date.localeCompare(b.date))
-    .slice(0, 6)
+  ].sort((a, b) => a.date.localeCompare(b.date)).slice(0, 6)
 
   if (allUpcoming.length === 0) return null
 
@@ -72,28 +62,20 @@ function UpcomingHolidaysSection({ weeklyOffDays, system }: UpcomingHolidaysProp
         {allUpcoming.map((item, idx) => (
           <div key={item.date}>
             <div className="flex items-center gap-3 px-4 py-3.5">
-              <div className="w-9 h-9 rounded-xl bg-holiday-light flex items-center
-                              justify-center shrink-0">
+              <div className="w-9 h-9 rounded-xl bg-holiday-light flex items-center justify-center shrink-0">
                 <CalendarOff size={16} className="text-holiday" />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-slate-800 truncate">
-                  {item.label}
-                </p>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  {formatDate(item.date, system)}
-                </p>
+                <p className="text-sm font-medium text-slate-800 truncate">{item.label}</p>
+                <p className="text-xs text-slate-400 mt-0.5">{formatDate(item.date, system)}</p>
               </div>
               {!item.isOneTime && (
-                <span className="text-xs text-holiday bg-holiday-light font-medium
-                                 px-2 py-0.5 rounded-full shrink-0">
+                <span className="text-xs text-holiday bg-holiday-light font-medium px-2 py-0.5 rounded-full shrink-0">
                   Recurring
                 </span>
               )}
             </div>
-            {idx < allUpcoming.length - 1 && (
-              <div className="border-t border-slate-50 mx-4" />
-            )}
+            {idx < allUpcoming.length - 1 && <div className="border-t border-slate-50 mx-4" />}
           </div>
         ))}
       </Card>
@@ -113,6 +95,7 @@ interface StudentProfilePageProps {
 export function StudentProfilePage({ onBack }: StudentProfilePageProps) {
   const student = useSelectedStudent()
   const profile = useProfile()
+  const holidays = useHolidays()
   const selectStudent = useAppStore(s => s.selectStudent)
 
   const system = profile?.dateSystem ?? 'AD'
@@ -121,45 +104,68 @@ export function StudentProfilePage({ onBack }: StudentProfilePageProps) {
 
   const [allHistory, setAllHistory] = useState<AttendanceHistoryEntry[]>([])
   const [availableMonths, setAvailableMonths] = useState<string[]>([])
-  const [selectedMonth, setSelectedMonth] = useState(currentMonthPrefix())
+  const [selectedMonth, setSelectedMonth] = useState<string>('all')
   const [filtered, setFiltered] = useState<AttendanceHistoryEntry[]>([])
-  const [overallStats, setOverallStats] = useState({
-    present: 0, absent: 0, leave: 0, holiday: 0,
-  })
+  const [overallStats, setOverallStats] = useState({ present: 0, absent: 0, leave: 0, holiday: 0 })
   const [loading, setLoading] = useState(true)
 
-  // ── Load history ───────────────────────────────────────────────────────────
   useEffect(() => {
     if (!student?.id) return
     setLoading(true)
 
     attendanceOps.getByStudent(student.id).then(records => {
-      // Only consider past records (today and before)
+      // All past records
       const pastRecords = records.filter(r => r.date <= today)
 
-      // Map of date → DB record for fast lookup
+      // DB map — DB always wins over generated entries
       const dbMap = new Map(pastRecords.map(r => [r.date, r]))
 
-      // Months that have any past DB record
-      const dbMonths = getUniqueMonths(pastRecords.map(r => r.date))
+      // ── Find the earliest attendance date ever recorded ──────────────────
+      // Recurring holidays and one-time holidays only count FROM this date.
+      // Before this date, no attendance was being tracked so holidays are irrelevant.
+      const firstAttendanceDate = pastRecords.length > 0
+        ? pastRecords.reduce((min, r) => r.date < min ? r.date : min, pastRecords[0].date)
+        : null
 
-      // Include current month even if no records yet
-      const allMonths = [...new Set([...dbMonths, currentMonthPrefix()])]
+      // Months that have real records (for month filter pills)
+      const monthsWithRecords = getUniqueMonths(pastRecords.map(r => r.date))
+      const allMonths = [...new Set([...monthsWithRecords, currentMonthPrefix()])]
         .sort((a, b) => b.localeCompare(a))
 
-      // Generate recurring off-day entries for past dates with no DB record
-      const recurringEntries: AttendanceHistoryEntry[] = []
-      for (const month of allMonths) {
-        const offDays = getWeeklyOffDaysInMonth(month, weeklyOffDays)
-        for (const date of offDays) {
-          // Only past/today, and only if no DB record exists
-          if (date <= today && !dbMap.has(date)) {
-            recurringEntries.push({ date, status: 'holiday' })
+      const generatedEntries: AttendanceHistoryEntry[] = []
+
+      if (firstAttendanceDate) {
+        // ── Recurring weekly off days ──────────────────────────────────────
+        // Only from firstAttendanceDate to today, only in months with records
+        for (const month of monthsWithRecords) {
+          const offDays = getWeeklyOffDaysInMonth(month, weeklyOffDays)
+          for (const date of offDays) {
+            if (
+              date >= firstAttendanceDate && // on or after first attendance
+              date <= today &&               // not future
+              !dbMap.has(date)               // no DB record
+            ) {
+              generatedEntries.push({ date, status: 'holiday' })
+            }
+          }
+        }
+
+        // ── One-time holidays ──────────────────────────────────────────────
+        // Only from firstAttendanceDate to today, only in months with records
+        for (const holiday of holidays) {
+          if (
+            holiday.date >= firstAttendanceDate && // on or after first attendance
+            holiday.date <= today &&               // not future
+            holiday.date.slice(0, 7) &&            // has a month prefix
+            monthsWithRecords.includes(holiday.date.slice(0, 7)) && // month has records
+            !dbMap.has(holiday.date)               // no DB record
+          ) {
+            generatedEntries.push({ date: holiday.date, status: 'holiday' })
           }
         }
       }
 
-      // DB entries (past only)
+      // DB entries
       const dbEntries: AttendanceHistoryEntry[] = pastRecords.map(r => ({
         date: r.date,
         status: r.status,
@@ -167,34 +173,34 @@ export function StudentProfilePage({ onBack }: StudentProfilePageProps) {
       }))
 
       // Merge and sort newest first
-      const merged = [...dbEntries, ...recurringEntries]
+      const merged = [...dbEntries, ...generatedEntries]
         .sort((a, b) => b.date.localeCompare(a.date))
 
       setAllHistory(merged)
       setAvailableMonths(allMonths)
 
-      // Overall stats — past days only
+      // Stats
       const stats = { present: 0, absent: 0, leave: 0, holiday: 0 }
-      for (const entry of merged) {
-        stats[entry.status]++
-      }
+      for (const entry of merged) stats[entry.status]++
       setOverallStats(stats)
-
-      // Default to most recent month with data
-      if (allMonths.length > 0 && !allMonths.includes(selectedMonth)) {
-        setSelectedMonth(allMonths[0])
-      }
 
       setLoading(false)
     })
-  }, [student?.id, weeklyOffDays.join(',')])
+  }, [student?.id, weeklyOffDays.join(','), holidays.length])
 
-  // ── Filter by selected month ───────────────────────────────────────────────
   useEffect(() => {
-    setFiltered(allHistory.filter(h => h.date.startsWith(selectedMonth)))
-  }, [allHistory, selectedMonth])
+    if (selectedMonth === 'all') {
+      setFiltered(allHistory)
+    } else if (system === 'BS') {
+      // selectedMonth is a BS key "YYYY-MM" in BS
+      // Compare each history entry's BS month key against selected
+      setFiltered(allHistory.filter(h => getBSMonthKey(h.date) === selectedMonth))
+    } else {
+      // AD mode — selectedMonth is a standard AD "YYYY-MM" prefix, simple startsWith
+      setFiltered(allHistory.filter(h => h.date.startsWith(selectedMonth)))
+    }
+  }, [allHistory, selectedMonth, system])
 
-  // ── Refresh stats on mount ─────────────────────────────────────────────────
   useEffect(() => {
     if (student?.id) selectStudent(student.id)
   }, [])
@@ -202,18 +208,10 @@ export function StudentProfilePage({ onBack }: StudentProfilePageProps) {
   if (!student) return null
 
   const totalNonHoliday = overallStats.present + overallStats.absent + overallStats.leave
-  const pct = totalNonHoliday > 0
-    ? Math.round((overallStats.present / totalNonHoliday) * 100)
-    : 0
-  const pctColor =
-    pct >= 85 ? 'text-present-dark' :
-    pct >= 75 ? 'text-leave-dark' :
-                'text-absent-dark'
-  const totalDays =
-    overallStats.present + overallStats.absent +
-    overallStats.leave + overallStats.holiday
+  const pct = totalNonHoliday > 0 ? Math.round((overallStats.present / totalNonHoliday) * 100) : 0
+  const pctColor = pct >= 85 ? 'text-present-dark' : pct >= 75 ? 'text-leave-dark' : 'text-absent-dark'
+  const totalDays = overallStats.present + overallStats.absent + overallStats.leave + overallStats.holiday
 
-  // Monthly summary for selected month
   const monthSummary = {
     present: filtered.filter(h => h.status === 'present').length,
     absent:  filtered.filter(h => h.status === 'absent').length,
@@ -221,25 +219,16 @@ export function StudentProfilePage({ onBack }: StudentProfilePageProps) {
     holiday: filtered.filter(h => h.status === 'holiday').length,
   }
 
-  // Is the selected month in the future?
-  const isFutureMonth = selectedMonth > currentMonthPrefix()
-
   return (
     <div className="flex flex-col min-h-screen bg-surface-secondary pb-24">
-      <PageHeader
-        title={student.name}
-        subtitle={`Roll No. ${student.rollNo}`}
-        onBack={onBack}
-      />
+      <PageHeader title={student.name} subtitle={`Roll No. ${student.rollNo}`} onBack={onBack} />
 
       <div className="px-4 flex flex-col gap-5">
 
-        {/* ── Overall Stats (past days only) ─────────────────────────────── */}
+        {/* Overall Stats */}
         <div>
           <div className="flex items-center justify-between mb-3">
-            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-              Overall Summary
-            </p>
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Overall Summary</p>
             <div className="flex items-center gap-1.5">
               <span className="text-xs text-slate-500">Attendance</span>
               <span className={`text-sm font-bold ${pctColor}`}>{pct}%</span>
@@ -253,52 +242,97 @@ export function StudentProfilePage({ onBack }: StudentProfilePageProps) {
             <StatCard label="Holiday" value={overallStats.holiday} color="purple" />
           </div>
 
-          {/* Stacked bar */}
           {totalDays > 0 && (
             <div className="mt-3 flex items-center gap-2">
               <div className="flex-1 h-2 bg-surface-tertiary rounded-full overflow-hidden flex">
-                <div
-                  className="h-full bg-present transition-all duration-700"
-                  style={{ width: `${(overallStats.present / totalDays) * 100}%` }}
-                />
-                <div
-                  className="h-full bg-absent transition-all duration-700"
-                  style={{ width: `${(overallStats.absent / totalDays) * 100}%` }}
-                />
-                <div
-                  className="h-full bg-leave transition-all duration-700"
-                  style={{ width: `${(overallStats.leave / totalDays) * 100}%` }}
-                />
-                <div
-                  className="h-full bg-holiday transition-all duration-700"
-                  style={{ width: `${(overallStats.holiday / totalDays) * 100}%` }}
-                />
+                <div className="h-full bg-present transition-all duration-700" style={{ width: `${(overallStats.present / totalDays) * 100}%` }} />
+                <div className="h-full bg-absent transition-all duration-700"  style={{ width: `${(overallStats.absent  / totalDays) * 100}%` }} />
+                <div className="h-full bg-leave transition-all duration-700"   style={{ width: `${(overallStats.leave   / totalDays) * 100}%` }} />
+                <div className="h-full bg-holiday transition-all duration-700" style={{ width: `${(overallStats.holiday / totalDays) * 100}%` }} />
               </div>
               <span className="text-xs text-slate-400 shrink-0">{totalDays} days</span>
             </div>
           )}
         </div>
 
-        {/* ── Attendance History ─────────────────────────────────────────── */}
+        {/* Attendance History */}
         <div>
           <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">
             Attendance History
           </p>
 
-          {/* Month Filter — past months only */}
           {availableMonths.length > 0 && (
             <div className="mb-4">
-              <MonthSelector
-                months={availableMonths}
-                selected={selectedMonth}
-                onSelect={setSelectedMonth}
-                formatLabel={m => formatMonthLabel(m, system)}
-              />
+              <div className="flex gap-2 overflow-x-auto pb-1">
+                {/* All option */}
+                <button
+                  onClick={() => setSelectedMonth('all')}
+                  className={`
+                    shrink-0 px-3 py-1.5 rounded-full text-xs font-medium
+                    transition-all duration-150 active:scale-95
+                    ${selectedMonth === 'all'
+                      ? 'bg-primary-600 text-white shadow-soft'
+                      : 'bg-surface-tertiary text-slate-600 hover:bg-slate-200'
+                    }
+                  `}
+                >
+                  All
+                </button>
+                {/* Month pills */}
+                {(() => {
+                  if (system === 'BS') {
+                    // Build unique BS month keys from all history entries
+                    // Key = "BSYYYY-MM", label = "Baisakh 2083"
+                    const seen = new Set<string>()
+                    return allHistory
+                      .map(h => getBSMonthKey(h.date))
+                      .filter(key => {
+                        if (seen.has(key)) return false
+                        seen.add(key)
+                        return true
+                      })
+                      .sort((a, b) => b.localeCompare(a)) // newest first
+                      .map(bsKey => (
+                        <button
+                          key={bsKey}
+                          onClick={() => setSelectedMonth(bsKey)}
+                          className={`
+                            shrink-0 px-3 py-1.5 rounded-full text-xs font-medium
+                            transition-all duration-150 active:scale-95
+                            ${selectedMonth === bsKey
+                              ? 'bg-primary-600 text-white shadow-soft'
+                              : 'bg-surface-tertiary text-slate-600 hover:bg-slate-200'
+                            }
+                          `}
+                        >
+                          {formatBSMonthKey(bsKey)}
+                        </button>
+                      ))
+                  } else {
+                    // AD mode — use AD month prefixes directly
+                    return availableMonths.map(adPrefix => (
+                      <button
+                        key={adPrefix}
+                        onClick={() => setSelectedMonth(adPrefix)}
+                        className={`
+                          shrink-0 px-3 py-1.5 rounded-full text-xs font-medium
+                          transition-all duration-150 active:scale-95
+                          ${selectedMonth === adPrefix
+                            ? 'bg-primary-600 text-white shadow-soft'
+                            : 'bg-surface-tertiary text-slate-600 hover:bg-slate-200'
+                          }
+                        `}
+                      >
+                        {formatMonthLabel(adPrefix, 'AD')}
+                      </button>
+                    ))
+                  }
+                })()}
+              </div>
             </div>
           )}
 
-          {/* Monthly mini stats */}
-          {!isFutureMonth && filtered.length > 0 && (
+          {filtered.length > 0 && (
             <div className="grid grid-cols-4 gap-2 mb-4">
               {[
                 { label: 'P', value: monthSummary.present, bg: 'bg-present-light', text: 'text-present-dark' },
@@ -314,17 +348,13 @@ export function StudentProfilePage({ onBack }: StudentProfilePageProps) {
             </div>
           )}
 
-          {/* History list */}
           {loading ? (
             <Card padding="md">
               <div className="flex items-center justify-center py-8">
                 <div className="flex gap-1.5">
                   {[0, 1, 2].map(i => (
-                    <div
-                      key={i}
-                      className="w-2 h-2 rounded-full bg-primary-300 animate-bounce"
-                      style={{ animationDelay: `${i * 0.15}s` }}
-                    />
+                    <div key={i} className="w-2 h-2 rounded-full bg-primary-300 animate-bounce"
+                      style={{ animationDelay: `${i * 0.15}s` }} />
                   ))}
                 </div>
               </div>
@@ -333,10 +363,9 @@ export function StudentProfilePage({ onBack }: StudentProfilePageProps) {
             <EmptyState
               icon="📅"
               title="No records this month"
-              description={
-                availableMonths.length === 0
-                  ? "Attendance hasn't been marked yet"
-                  : "Select a different month to view history"
+              description={availableMonths.length === 0
+                ? "Attendance hasn't been marked yet"
+                : "Select a different month to view history"
               }
             />
           ) : (
@@ -350,34 +379,24 @@ export function StudentProfilePage({ onBack }: StudentProfilePageProps) {
                       </p>
                       {entry.status === 'holiday' && !entry.note && (
                         <p className="text-xs text-slate-400 mt-0.5">
-                          {isWeeklyOffDay(entry.date, weeklyOffDays)
-                            ? 'Weekly Off'
-                            : 'Holiday'
-                          }
+                          {isWeeklyOffDay(entry.date, weeklyOffDays) ? 'Weekly Off' : 'Holiday'}
                         </p>
                       )}
                       {entry.note && (
-                        <p className="text-xs text-slate-400 mt-0.5 truncate">
-                          {entry.note}
-                        </p>
+                        <p className="text-xs text-slate-400 mt-0.5 truncate">{entry.note}</p>
                       )}
                     </div>
                     <StatusBadge status={entry.status} size="md" />
                   </div>
-                  {idx < filtered.length - 1 && (
-                    <div className="border-t border-slate-50 mx-4" />
-                  )}
+                  {idx < filtered.length - 1 && <div className="border-t border-slate-50 mx-4" />}
                 </div>
               ))}
             </Card>
           )}
         </div>
 
-        {/* ── Upcoming Holidays (future, separate from history) ──────────── */}
-        <UpcomingHolidaysSection
-          weeklyOffDays={weeklyOffDays}
-          system={system}
-        />
+        {/* Upcoming Holidays */}
+        <UpcomingHolidaysSection weeklyOffDays={weeklyOffDays} system={system} />
 
       </div>
     </div>
