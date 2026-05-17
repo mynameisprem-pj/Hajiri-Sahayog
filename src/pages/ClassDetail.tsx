@@ -1,7 +1,7 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import {
   Plus, Upload, Users, CheckSquare,
-  Trash2, Pencil, ChevronRight, AlertCircle,
+  Trash2, MoreVertical, Pencil, ChevronRight, AlertCircle,
 } from 'lucide-react'
 import {
   PageHeader, Button, Card, EmptyState, BottomSheet,
@@ -161,12 +161,12 @@ function EditStudentSheet({ student, onClose, existingRollNos }: EditStudentShee
   const [saving, setSaving] = useState(false)
   const updateStudent = useAppStore(s => s.updateStudent)
 
-  // Reset form when student changes
-  useState(() => {
+  // Reset form whenever the student prop changes (opening edit for a different student)
+  useEffect(() => {
     setRollNo(String(student?.rollNo ?? ''))
     setName(student?.name ?? '')
     setErrors({})
-  })
+  }, [student?.id])
 
   const validate = () => {
     const e: typeof errors = {}
@@ -390,7 +390,7 @@ function StudentRow({ student, onSelect, onEdit, onDelete }: StudentRowProps) {
                      hover:bg-surface-tertiary transition-all active:scale-90"
           aria-label="Student options"
         >
-          <Pencil size={15} />
+          <MoreVertical size={15} />
         </button>
 
         {menuOpen && (
@@ -623,18 +623,23 @@ function AttendanceTab({ classId }: AttendanceTabProps) {
         />
       </div>
 
-      {/* Holiday Info Banner — simple, no special actions */}
-      {isHolidayDate && !todayAttendance.some(a => a.status !== 'holiday') && (
+      {/* Holiday Banner — always visible on holiday/recurring off days */}
+      {isHolidayDate && (
         <div className="mx-4 bg-holiday-light rounded-2xl px-4 py-3 flex items-center gap-3">
           <span className="text-xl">🎉</span>
           <div>
             <p className="text-sm font-semibold text-holiday-dark">
-              {isRecurringOffDay && !todayAttendance.some(a => a.status === 'holiday')
+              {isRecurringOffDay
                 ? `Weekly Off — ${new Date(attendanceDate + 'T00:00:00').toLocaleDateString('en', { weekday: 'long' })}`
                 : attendanceDate === todayAD() ? todayHolidayName : 'Holiday'
               }
             </p>
-            <p className="text-xs text-holiday">Attendance auto-marked as Holiday</p>
+            <p className="text-xs text-holiday">
+              {markedCount > 0 && todayAttendance.some(a => a.status !== 'holiday')
+                ? 'Attendance marked — tap Clear All to restore holiday'
+                : 'Attendance auto-marked as Holiday'
+              }
+            </p>
           </div>
         </div>
       )}
@@ -649,16 +654,16 @@ function AttendanceTab({ classId }: AttendanceTabProps) {
             <Badge color="green" dot>Done</Badge>
           )}
         </div>
-        <div className="flex gap-2">
-          {markedCount > 0 && (
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => clearAllAttendance(classId, attendanceDate)}
-            >
-              Clear All
-            </Button>
-          )}
+        {/* Show Clear All when marked, Mark All Present when not marked */}
+        {markedCount > 0 ? (
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => clearAllAttendance(classId, attendanceDate)}
+          >
+            Clear All
+          </Button>
+        ) : (
           <Button
             size="sm"
             variant="secondary"
@@ -666,7 +671,7 @@ function AttendanceTab({ classId }: AttendanceTabProps) {
           >
             Mark All Present
           </Button>
-        </div>
+        )}
       </div>
 
       {/* Search */}
