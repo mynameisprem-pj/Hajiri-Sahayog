@@ -406,6 +406,16 @@ export const useAppStore = create<AppState>((set, get) => ({
     await holidayOps.add(date, name)
     await get().loadHolidays()
     await get().loadClasses()
+
+    // Refresh attendance view if the added holiday date matches currently viewed date
+    const { selectedClassId, attendanceDate } = get()
+    if (selectedClassId && attendanceDate === date) {
+      await get().loadAttendanceForDate(selectedClassId, date)
+    }
+
+    // Update today's holiday status so dashboard banner reflects change
+    await get().checkTodayHoliday()
+
     get().showToast('success', `Holiday "${name}" added`)
   },
 
@@ -414,6 +424,17 @@ export const useAppStore = create<AppState>((set, get) => ({
     await holidayOps.delete(id)
     await get().loadHolidays()
     await get().loadClasses()
+
+    // Refresh attendance view if a class is currently open
+    // so the holiday banner and student statuses update immediately
+    const { selectedClassId, attendanceDate } = get()
+    if (selectedClassId) {
+      await get().loadAttendanceForDate(selectedClassId, attendanceDate)
+    }
+
+    // Update today's holiday status so dashboard banner reflects change
+    await get().checkTodayHoliday()
+
     get().showToast('success', `Holiday "${holiday?.name}" removed`)
   },
 
