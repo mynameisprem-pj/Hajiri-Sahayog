@@ -95,7 +95,7 @@ function AddStudentSheet({ isOpen, onClose, classId, nextRollNo, existingRollNos
         <div className="flex flex-col gap-2 w-full">
           <div className="flex gap-2">
             <Button variant="secondary" fullWidth onClick={onClose}>
-              Done
+              Cancel
             </Button>
             <Button fullWidth loading={saving} onClick={handleSave}>
               Save & Add Next
